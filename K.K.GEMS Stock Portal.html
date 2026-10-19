@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>K. K. GEMS - Stock Portal</title>
+  <title>K. K. GEMS - Stock, Billing & Brokerage Portal</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- SheetJS for Excel -->
   <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
@@ -35,7 +35,7 @@
     <div class="px-4 py-2 flex flex-wrap justify-between items-center gap-2">
       <div class="flex items-center gap-3">
         <h1 class="text-base font-bold tracking-wide">K. K. GEMS</h1>
-        <span class="text-[11px] text-indigo-200">Stock Portal</span>
+        <span class="text-[11px] text-indigo-200">Stock & Brokerage Portal</span>
         <span id="syncIndicator" class="text-[10px] bg-indigo-800 border border-indigo-700 px-2 py-0.5 rounded-full flex items-center gap-1">
           <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Connected
         </span>
@@ -340,7 +340,7 @@
               <span class="text-[10px] text-slate-400">No Image</span>
             </div>
             <div class="flex-1 space-y-1">
-              <input type="file" id="formImageFile" accept="image/*" capture="environment" onchange="handleImageUpload(event)" class="text-[11px]">
+              <input type="file" id="formImageFile" accept="image/*" onchange="handleImageUpload(event)" class="text-[11px]">
               <p class="text-[10px] text-slate-500">Capture from phone camera or select photo to identify stock accurately.</p>
             </div>
           </div>
@@ -370,7 +370,7 @@
     // =========================================================================
     // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
     // =========================================================================
-    const SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_URL_HERE";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxylnNas9s1X9dCbVIEocNVfSPId90JOtI9V6d2rqWqo7Cyv_QbI_XkW2YlSLMD35B9/exec";
 
     let stockData = JSON.parse(localStorage.getItem('kk_gems_stock')) || [];
     let selectedItemIds = new Set();
