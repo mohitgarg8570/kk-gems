@@ -117,7 +117,7 @@
     </select>
   </section>
 
-  <!-- Main Stock Table (Strict Sequence Requested: Only Balance Lines & Balance Weight shown) -->
+  <!-- Main Stock Table -->
   <div class="flex-1 overflow-auto bg-white">
     <table class="w-full text-left border-collapse">
       <thead>
@@ -332,16 +332,29 @@
           </div>
         </div>
 
-        <!-- Stock Photo Section -->
+        <!-- Stock Photo Section: Dual Action (Take Photo or Choose Gallery) -->
         <div class="border border-slate-200 rounded-lg p-3 bg-slate-50 space-y-2">
           <label class="block font-semibold text-slate-700 text-xs">📷 Gem Stock Photo</label>
           <div class="flex items-center gap-3">
-            <div id="imagePreviewContainer" class="w-16 h-16 rounded border bg-slate-200 flex items-center justify-center overflow-hidden">
+            <div id="imagePreviewContainer" class="w-16 h-16 rounded border bg-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0">
               <span class="text-[10px] text-slate-400">No Image</span>
             </div>
-            <div class="flex-1 space-y-1">
-              <input type="file" id="formImageFile" accept="image/*" onchange="handleImageUpload(event)" class="text-[11px]">
-              <p class="text-[10px] text-slate-500">Capture from phone camera or select photo to identify stock accurately.</p>
+            
+            <div class="flex-1 space-y-2">
+              <div class="flex flex-wrap gap-2">
+                <!-- Button 1: Camera Direct -->
+                <button type="button" onclick="document.getElementById('cameraInput').click()" class="bg-indigo-700 hover:bg-indigo-600 text-white px-3 py-1.5 rounded text-xs font-medium shadow-xs flex items-center gap-1.5">
+                  📸 Take Photo
+                </button>
+                <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden" onchange="handleImageUpload(event)">
+
+                <!-- Button 2: Gallery Picker -->
+                <button type="button" onclick="document.getElementById('galleryInput').click()" class="bg-slate-200 hover:bg-slate-300 text-slate-800 px-3 py-1.5 rounded text-xs font-medium border border-slate-300 shadow-xs flex items-center gap-1.5">
+                  🖼️ Choose from Gallery
+                </button>
+                <input type="file" id="galleryInput" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+              </div>
+              <p class="text-[10px] text-slate-500">Tap <b>Take Photo</b> to shoot with camera or <b>Choose from Gallery</b> to pick an existing image.</p>
             </div>
           </div>
         </div>
@@ -582,7 +595,6 @@
       calculateTotals();
     }
 
-    // Calculation of Balances, Costs & Net Profits
     function computeValues(item) {
       const isBuyLine = item.rateBasis === 'line';
       const buyLine = Number(item.line) || 0;
@@ -919,6 +931,8 @@
       document.getElementById('entryId').value = '';
       document.getElementById('formImageBase64').value = '';
       document.getElementById('imagePreviewContainer').innerHTML = `<span class="text-[10px] text-slate-400">No Image</span>`;
+      document.getElementById('cameraInput').value = '';
+      document.getElementById('galleryInput').value = '';
       document.getElementById('modalTitle').innerText = 'Add New Gem Stock';
       document.getElementById('formSupplierName').value = '';
       document.getElementById('formBuyPayMode').value = 'Cash';
