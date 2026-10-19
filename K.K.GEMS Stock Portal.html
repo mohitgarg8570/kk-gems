@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>K. K. GEMS - Stock Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SheetJS for Excel -->
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <!-- jsPDF & AutoTable for PDF Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    th, td {
+      white-space: nowrap;
+      padding: 6px 12px;
+    }
+    tbody tr:hover {
+      background-color: #f1f5f9;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background-color: #e2e8f0;
+      z-index: 10;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .pulse-sync { animation: pulse 1.5s infinite; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 text-xs antialiased h-screen flex flex-col overflow-hidden">
+
+  <!-- Top Navigation & Summary Bar -->
+  <header class="bg-indigo-900 text-white flex-shrink-0 shadow z-30">
+    <div class="px-4 py-2 flex flex-wrap justify-between items-center gap-2">
+      <div class="flex items-center gap-3">
+        <h1 class="text-base font-bold tracking-wide">K. K. GEMS</h1>
+        <span class="text-[11px] text-indigo-200">Stock Portal</span>
+        <span id="syncIndicator" class="text-[10px] bg-indigo-800 border border-indigo-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Connected
+        </span>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button id="btnBulkDelete" onclick="deleteSelectedItems()" class="hidden bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded text-xs font-semibold shadow flex items-center gap-1">
+          🗑️ Delete (<span id="selectedCount">0</span>)
+        </button>
+        <button onclick="fetchFromGoogleDrive()" class="bg-indigo-800 hover:bg-indigo-700 px-2.5 py-1.5 rounded text-xs shadow flex items-center gap-1 border border-indigo-700">
+          🔄 Refresh
+        </button>
+        <button onclick="openModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-semibold shadow">
+          + Add Item
+        </button>
+        <label for="excelInput" class="bg-indigo-800 hover:bg-indigo-700 px-3 py-1.5 rounded text-xs cursor-pointer shadow border border-indigo-700">
+          📥 Import Excel
+        </label>
+        <input type="file" id="excelInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="importExcel(event)">
+        
+        <!-- Excel Export Button -->
+        <button onclick="exportExcel()" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded text-xs font-medium shadow flex items-center gap-1">
+          📊 Excel Report
+        </button>
+
+        <!-- PDF Export Button -->
+        <button onclick="exportPDF()" class="bg-rose-700 hover:bg-rose-600 text-white px-3 py-1.5 rounded text-xs font-medium shadow flex items-center gap-1">
+          📄 PDF Report
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Totals Bar with Profit Metric -->
+    <div class="bg-indigo-950 px-4 py-1.5 flex flex-wrap gap-4 text-[11px] border-t border-indigo-800/80 items-center">
+      <div>Entries: <span id="statItems" class="font-bold text-white">0</span></div>
+      <div>Balance Lines: <span id="statLines" class="font-bold text-sky-300">0</span></div>
+      <div>Balance Weight: <span id="statWeights" class="font-bold text-sky-300">0 gm | 0 kg | 0 ct</span></div>
+      <div>Total Net Cost: <span id="statCost" class="font-bold text-slate-300">₹0</span></div>
+      <div>Total Net Sales: <span id="statSale" class="font-bold text-amber-300">₹0</span></div>
+      <div class="bg-emerald-900/60 px-2.5 py-0.5 rounded border border-emerald-600/50">
+        Total Net Profit: <span id="statProfit" class="font-bold text-emerald-300 text-xs">₹0</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Filter & Search Section -->
+  <section class="bg-white border-b border-slate-200 px-4 py-2 flex flex-wrap gap-2 items-center flex-shrink-0 z-20 shadow-sm">
+    <input type="text" id="searchInput" placeholder="🔍 Search stone, description, party/customer, shep..." 
+           class="flex-1 min-w-[200px] px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-indigo-600 outline-none"
+           oninput="renderStock()">
+
+    <select id="filterStone" onchange="renderStock()" class="px-2 py-1.5 border border-slate-300 rounded bg-slate-50 text-xs font-medium text-indigo-900">
+      <option value="">All Stone Names</option>
+    </select>
+
+    <select id="filterShep" onchange="renderStock()" class="px-2 py-1.5 border border-slate-300 rounded bg-slate-50 text-xs">
+      <option value="">All Shep</option>
+    </select>
+
+    <select id="filterUnit" onchange="renderStock()" class="px-2 py-1.5 border border-slate-300 rounded bg-slate-50 text-xs font-medium text-slate-700">
+      <option value="">All Units / Rate Basis</option>
+      <option value="line">Line (Per Line)</option>
+      <option value="gm">Grams (gm)</option>
+      <option value="kg">Kilograms (kg)</option>
+      <option value="ct">Carats (ct)</option>
+    </select>
+
+    <select id="filterQuality" onchange="renderStock()" class="px-2 py-1.5 border border-slate-300 rounded bg-slate-50 text-xs">
+      <option value="">All Quality</option>
+      <option value="AAA">AAA</option>
+      <option value="AA">AA</option>
+      <option value="A">A</option>
+      <option value="Commercial">Commercial</option>
+      <option value="Standard">Standard</option>
+    </select>
+
+    <select id="filterNature" onchange="renderStock()" class="px-2 py-1.5 border border-slate-300 rounded bg-slate-50 text-xs">
+      <option value="">All Nature</option>
+    </select>
+  </section>
+
+  <!-- Main Stock Table (Strict Sequence Requested: Only Balance Lines & Balance Weight shown) -->
+  <div class="flex-1 overflow-auto bg-white">
+    <table class="w-full text-left border-collapse">
+      <thead>
+        <tr>
+          <th class="w-8 text-center">
+            <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)" class="w-3.5 h-3.5 rounded text-indigo-600 cursor-pointer">
+          </th>
+          <th class="w-12 text-center">Photo</th>
+          <th>Stone Name</th>
+          <th>Description</th>
+          <th>Shep</th>
+          <th>Quality</th>
+          <th>Nature</th>
+          <th>Supplier</th>
+          <th class="text-right">Lines</th>
+          <th class="text-right">Bunch</th>
+          <th class="text-right">Weight</th>
+          <th class="text-center">Unit</th>
+          <th>Rate Basis</th>
+          <th class="text-right">Buy Rate</th>
+          <th class="text-right">Cost</th>
+          <th class="text-right">Net Sales</th>
+          <th class="text-right">Net Profit</th>
+          <th>Note</th>
+          <th class="text-center">Action</th>
+        </tr>
+      </thead>
+      <tbody id="stockTableBody" class="divide-y divide-slate-200">
+        <!-- Rendered Rows dynamically inserted and sorted in ascending order -->
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Modal: Purchase & Multi-Sales Manager -->
+  <div id="itemModal" class="fixed inset-0 bg-black/60 hidden z-50 flex items-center justify-center p-2 sm:p-4">
+    <div class="bg-white w-full max-w-4xl rounded-xl shadow-2xl overflow-hidden max-h-[96vh] flex flex-col">
+      <div class="px-4 py-2.5 bg-indigo-900 text-white flex justify-between items-center">
+        <div>
+          <h2 id="modalTitle" class="font-bold text-sm">Stock & Sales Manager</h2>
+          <p class="text-[10px] text-indigo-200">K. K. GEMS Complete Item & Billing Record</p>
+        </div>
+        <button onclick="closeModal()" class="text-indigo-200 hover:text-white font-bold text-xl leading-none">&times;</button>
+      </div>
+
+      <form id="stockForm" onsubmit="saveEntry(event)" class="p-4 space-y-4 overflow-y-auto">
+        <input type="hidden" id="entryId">
+        <input type="hidden" id="formImageBase64">
+
+        <!-- Top Section: General Gem Details -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div>
+            <label class="block font-semibold mb-1 text-slate-700">Stone Name *</label>
+            <input type="text" id="formStone" required placeholder="e.g. रोज / ओपल" class="w-full p-2 border rounded text-xs font-semibold">
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block font-semibold mb-1 text-slate-700">Item Description / Cut *</label>
+            <input type="text" id="formDesc" required placeholder="e.g. रोज टम्बल खारे" class="w-full p-2 border rounded text-xs">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2">
+          <div>
+            <label class="block font-medium mb-1 text-slate-600">Shep (Shape / शेप)</label>
+            <input type="text" id="formShep" placeholder="e.g. खारे, बदाम, टम्बल" class="w-full p-2 border rounded text-xs">
+          </div>
+          <div>
+            <label class="block font-medium mb-1 text-slate-600">Quality</label>
+            <input type="text" id="formQuality" placeholder="AAA / Standard" class="w-full p-2 border rounded text-xs">
+          </div>
+          <div>
+            <label class="block font-medium mb-1 text-slate-600">Nature</label>
+            <input type="text" id="formNature" placeholder="Natural" class="w-full p-2 border rounded text-xs">
+          </div>
+        </div>
+
+        <!-- Purchase & Inward Details -->
+        <div class="border border-indigo-200 rounded-lg p-3 bg-indigo-50/40 space-y-2.5">
+          <div class="flex justify-between items-center border-b border-indigo-100 pb-1.5">
+            <span class="font-bold text-indigo-950 text-xs flex items-center gap-1.5">
+              <span>📥</span> Purchase & Inward Details
+            </span>
+            <span class="text-[10px] text-slate-500 font-medium">Party Name, Payment Mode & Inward Costs</span>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <div>
+              <label class="block font-semibold mb-1 text-slate-700">Purchased From (Supplier) *</label>
+              <input type="text" id="formSupplierName" placeholder="e.g. Jaipur Gems Traders" class="w-full p-1.5 border rounded text-xs bg-white font-medium">
+            </div>
+            <div>
+              <label class="block font-semibold mb-1 text-slate-700">Payment Mode (Paid Via)</label>
+              <select id="formBuyPayMode" class="w-full p-1.5 border rounded text-xs bg-white font-medium">
+                <option value="Cash">Cash (नकद)</option>
+                <option value="Bank Transfer / NEFT">Bank Transfer / NEFT</option>
+                <option value="UPI / PhonePe / GPay">UPI / PhonePe / GPay</option>
+                <option value="Cheque">Cheque</option>
+                <option value="Credit / Udhar">Credit / Udhar (उधार)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-semibold mb-1 text-slate-700">Buy Date</label>
+              <input type="date" id="formBuyDate" class="w-full p-1.5 border rounded text-xs bg-white">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-4 gap-2">
+            <div>
+              <label class="block font-medium mb-1 text-slate-700">Purchased Lines</label>
+              <input type="number" step="any" id="formLine" placeholder="0" class="w-full p-1.5 border rounded text-xs bg-white" oninput="calculateTotals()">
+            </div>
+            <div>
+              <label class="block font-medium mb-1 text-slate-700">Bunch (बंडल)</label>
+              <input type="number" step="any" id="formBunch" placeholder="0" class="w-full p-1.5 border rounded text-xs bg-white">
+            </div>
+            <div>
+              <label class="block font-medium mb-1 text-slate-700">Purchased Weight</label>
+              <input type="number" step="any" id="formWeight" placeholder="0" class="w-full p-1.5 border rounded text-xs bg-white" oninput="calculateTotals()">
+            </div>
+            <div>
+              <label class="block font-medium mb-1 text-slate-700">Weight Unit</label>
+              <select id="formWeightUnit" class="w-full p-1.5 border rounded text-xs bg-white font-medium" onchange="onWeightUnitChange(); calculateTotals();">
+                <option value="gm">Gram (gm)</option>
+                <option value="kg">Kilogram (kg)</option>
+                <option value="ct">Carat (ct)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-4 gap-2 pt-1">
+            <div>
+              <label class="block font-medium mb-1 text-slate-700">Rate Basis</label>
+              <select id="formRateBasis" class="w-full p-1.5 border rounded text-xs bg-amber-50 font-semibold" onchange="onRateBasisChange(); calculateTotals();">
+                <option value="line">Line (Line × Rate)</option>
+                <option value="gm">Weight gm</option>
+                <option value="kg">Weight kg</option>
+                <option value="ct">Weight ct</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-semibold mb-1 text-slate-700">Buy Rate (₹)</label>
+              <input type="number" step="any" id="formCostRate" placeholder="0" class="w-full p-1.5 border rounded text-xs bg-white font-bold" oninput="calculateTotals()">
+            </div>
+            <div>
+              <label class="block font-medium mb-1 text-slate-700">Discount on Cost (%)</label>
+              <input type="number" step="any" id="formBuyDiscount" placeholder="0" class="w-full p-1.5 border rounded text-xs bg-white" oninput="calculateTotals()">
+            </div>
+            <div>
+              <label class="block font-medium mb-1 text-slate-700">Brokerage on Cost (%)</label>
+              <input type="number" step="any" id="formBuyBrokerage" placeholder="0" class="w-full p-1.5 border rounded text-xs bg-white" oninput="calculateTotals()">
+            </div>
+          </div>
+
+          <div class="bg-white p-2.5 rounded border border-indigo-100 flex flex-wrap justify-between gap-3 text-xs">
+            <div>Base Cost: <span id="previewBaseCost" class="font-bold text-slate-700">₹0.00</span></div>
+            <div>After Disc: <span id="previewCostAfterDisc" class="font-bold text-slate-700">₹0.00</span></div>
+            <div>Cost Brokerage: <span id="previewBuyBrokerageAmt" class="font-bold text-slate-700">₹0.00</span></div>
+            <div class="text-indigo-950 font-bold border-l pl-3">Final Total Cost: <span id="previewCost" class="text-emerald-700 text-sm">₹0.00</span></div>
+          </div>
+        </div>
+
+        <!-- Sales Records & Profit -->
+        <div class="border border-emerald-200 rounded-lg p-3 bg-emerald-50/40 space-y-3">
+          <div class="flex justify-between items-center border-b border-emerald-100 pb-1.5">
+            <div>
+              <span class="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
+                <span>📤</span> Sales Records & Profit
+              </span>
+              <span class="text-[10px] text-slate-500 block">Record customer sales with individual lines, weights, rate basis, and discount</span>
+            </div>
+            <button type="button" onclick="addSaleRow()" class="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1 rounded text-xs font-semibold shadow-xs flex items-center gap-1">
+              + Add Sale Record
+            </button>
+          </div>
+
+          <div class="overflow-x-auto bg-white rounded border border-emerald-100 max-h-56 overflow-y-auto">
+            <table class="w-full text-left border-collapse text-[11px]">
+              <thead class="bg-emerald-100/70 text-emerald-900 sticky top-0 z-10 font-semibold">
+                <tr>
+                  <th class="py-1 px-2">Sale Date</th>
+                  <th class="py-1 px-2">Customer Name</th>
+                  <th class="py-1 px-2">Pay Received Mode</th>
+                  <th class="py-1 px-2">Sold Lines</th>
+                  <th class="py-1 px-2">Sold Weight</th>
+                  <th class="py-1 px-2">Rate Basis</th>
+                  <th class="py-1 px-2">Sale Rate (₹)</th>
+                  <th class="py-1 px-2">Disc %</th>
+                  <th class="py-1 px-2">Brok %</th>
+                  <th class="py-1 px-2 text-right">Net Received (₹)</th>
+                  <th class="py-1 px-2 text-right">Net Profit (₹)</th>
+                  <th class="py-1 px-2 text-center w-8">Action</th>
+                </tr>
+              </thead>
+              <tbody id="salesTableBody" class="divide-y divide-slate-100">
+                <!-- Injected sale rows -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 pt-1 text-xs">
+            <div class="bg-white p-2 rounded border border-emerald-200">
+              <span class="text-[10px] text-slate-500 block">Total Net Sales Received</span>
+              <span id="previewSaleAmount" class="font-bold text-slate-900 text-sm">₹0.00</span>
+            </div>
+            <div class="bg-white p-2 rounded border border-emerald-200">
+              <span class="text-[10px] text-slate-500 block">Total Net Realized Profit</span>
+              <span id="previewProfit" class="font-bold text-emerald-700 text-sm">₹0.00</span>
+            </div>
+            <div class="bg-white p-2 rounded border border-slate-200">
+              <span class="text-[10px] text-slate-500 block">Remaining Stock Balance</span>
+              <span id="previewBalance" class="font-bold text-indigo-700 text-xs">0 lines | 0 gm left</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stock Photo Section -->
+        <div class="border border-slate-200 rounded-lg p-3 bg-slate-50 space-y-2">
+          <label class="block font-semibold text-slate-700 text-xs">📷 Gem Stock Photo</label>
+          <div class="flex items-center gap-3">
+            <div id="imagePreviewContainer" class="w-16 h-16 rounded border bg-slate-200 flex items-center justify-center overflow-hidden">
+              <span class="text-[10px] text-slate-400">No Image</span>
+            </div>
+            <div class="flex-1 space-y-1">
+              <input type="file" id="formImageFile" accept="image/*" capture="environment" onchange="handleImageUpload(event)" class="text-[11px]">
+              <p class="text-[10px] text-slate-500">Capture from phone camera or select photo to identify stock accurately.</p>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-medium mb-1 text-slate-700">Remarks / Note</label>
+          <input type="text" id="formNote" placeholder="e.g. Lot number, invoice reference, locker location" class="w-full p-2 border rounded text-xs">
+        </div>
+
+        <div class="flex gap-2 pt-2 border-t">
+          <button type="button" onclick="closeModal()" class="w-1/2 py-2 bg-slate-200 text-slate-700 rounded font-medium">Cancel</button>
+          <button type="submit" class="w-1/2 py-2 bg-indigo-700 text-white rounded font-medium shadow">Save to Drive</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Zoom Image Modal -->
+  <div id="zoomModal" class="fixed inset-0 bg-black/80 hidden z-50 flex items-center justify-center p-4" onclick="this.classList.add('hidden')">
+    <div class="max-w-md max-h-[85vh] bg-white p-2 rounded-xl">
+      <img id="zoomedImg" src="" class="max-w-full max-h-[80vh] rounded object-contain">
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
+    // =========================================================================
+    const SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_URL_HERE";
+
+    let stockData = JSON.parse(localStorage.getItem('kk_gems_stock')) || [];
+    let selectedItemIds = new Set();
+    let currentFilteredIds = [];
+    let currentModalSales = [];
+
+    function updateSyncStatus(text, color = "bg-emerald-400") {
+      const el = document.getElementById('syncIndicator');
+      if (el) el.innerHTML = `<span class="w-2 h-2 rounded-full ${color}"></span> ${text}`;
+    }
+
+    async function fetchFromGoogleDrive() {
+      if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR")) return;
+
+      updateSyncStatus("Syncing with Drive...", "bg-amber-400 pulse-sync");
+      try {
+        const res = await fetch(SCRIPT_URL);
+        const json = await res.json();
+        if (json.status === "SUCCESS" && Array.isArray(json.data) && json.data.length > 0) {
+          stockData = json.data;
+          localStorage.setItem('kk_gems_stock', JSON.stringify(stockData));
+          selectedItemIds.clear();
+          updateSelectionState();
+          updateDropdownFilters();
+          renderStock();
+          updateSyncStatus("Synced with Drive", "bg-emerald-400");
+        } else {
+          updateSyncStatus("Connected (Empty)", "bg-emerald-400");
+        }
+      } catch (err) {
+        console.error("Drive Fetch Error:", err);
+        updateSyncStatus("Offline Cache", "bg-yellow-400");
+      }
+    }
+
+    async function sendToDrive(payload) {
+      if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR")) return;
+
+      updateSyncStatus("Saving to Drive...", "bg-amber-400 pulse-sync");
+      try {
+        await fetch(SCRIPT_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        updateSyncStatus("Saved to Drive", "bg-emerald-400");
+      } catch (err) {
+        console.error("Drive Post Error:", err);
+        updateSyncStatus("Sync Error", "bg-rose-500");
+      }
+    }
+
+    function handleImageUpload(evt) {
+      const file = evt.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          const maxDim = 600;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height && width > maxDim) {
+            height *= maxDim / width;
+            width = maxDim;
+          } else if (height > maxDim) {
+            width *= maxDim / height;
+            height = maxDim;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const compressed = canvas.toDataURL('image/jpeg', 0.65);
+          document.getElementById('formImageBase64').value = compressed;
+          document.getElementById('imagePreviewContainer').innerHTML = `<img src="${compressed}" class="w-full h-full object-cover">`;
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function viewZoomImage(src) {
+      if (!src) return;
+      document.getElementById('zoomedImg').src = src;
+      document.getElementById('zoomModal').classList.remove('hidden');
+    }
+
+    function onRateBasisChange() {
+      const basis = document.getElementById('formRateBasis').value;
+      if (basis !== 'line') {
+        document.getElementById('formWeightUnit').value = basis;
+      }
+      calculateTotals();
+    }
+
+    function onWeightUnitChange() {
+      const unit = document.getElementById('formWeightUnit').value;
+      const basis = document.getElementById('formRateBasis').value;
+      if (basis !== 'line') {
+        document.getElementById('formRateBasis').value = unit;
+      }
+      calculateTotals();
+    }
+
+    function renderModalSalesTable() {
+      const tbody = document.getElementById('salesTableBody');
+      tbody.innerHTML = '';
+
+      if (currentModalSales.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="12" class="text-center py-3 text-slate-400 italic">No sales recorded yet. Click "+ Add Sale Record" to add customer sales.</td></tr>`;
+        return;
+      }
+
+      currentModalSales.forEach((sale, index) => {
+        const tr = document.createElement('tr');
+        tr.className = "border-b border-slate-100";
+        tr.innerHTML = `
+          <td class="p-1">
+            <input type="date" value="${sale.date || ''}" onchange="updateSaleRow(${index}, 'date', this.value)" class="p-1 border rounded w-28 text-[11px] bg-white">
+          </td>
+          <td class="p-1">
+            <input type="text" value="${sale.customer || ''}" placeholder="Customer Name" onchange="updateSaleRow(${index}, 'customer', this.value)" class="p-1 border rounded w-24 text-[11px] bg-white font-medium">
+          </td>
+          <td class="p-1">
+            <select onchange="updateSaleRow(${index}, 'payMode', this.value)" class="p-1 border rounded w-24 text-[11px] bg-white">
+              <option value="Cash" ${sale.payMode === 'Cash' ? 'selected' : ''}>Cash</option>
+              <option value="Bank Transfer / NEFT" ${sale.payMode === 'Bank Transfer / NEFT' ? 'selected' : ''}>Bank Transfer</option>
+              <option value="UPI / PhonePe / GPay" ${sale.payMode === 'UPI / PhonePe / GPay' ? 'selected' : ''}>UPI</option>
+              <option value="Cheque" ${sale.payMode === 'Cheque' ? 'selected' : ''}>Cheque</option>
+              <option value="Credit / Udhar" ${sale.payMode === 'Credit / Udhar' ? 'selected' : ''}>Credit</option>
+            </select>
+          </td>
+          <td class="p-1">
+            <input type="number" step="any" value="${sale.soldLines || ''}" placeholder="0" oninput="updateSaleRow(${index}, 'soldLines', this.value)" class="p-1 border rounded w-16 text-[11px] bg-white font-semibold">
+          </td>
+          <td class="p-1">
+            <input type="number" step="any" value="${sale.soldWeight || ''}" placeholder="0" oninput="updateSaleRow(${index}, 'soldWeight', this.value)" class="p-1 border rounded w-16 text-[11px] bg-white font-semibold">
+          </td>
+          <td class="p-1">
+            <select onchange="updateSaleRow(${index}, 'rateBasis', this.value)" class="p-1 border rounded text-[11px] bg-amber-50 font-semibold w-24">
+              <option value="line" ${sale.rateBasis === 'line' ? 'selected' : ''}>Per Line</option>
+              <option value="weight" ${sale.rateBasis === 'weight' ? 'selected' : ''}>Per Weight</option>
+            </select>
+          </td>
+          <td class="p-1">
+            <input type="number" step="any" value="${sale.saleRate || ''}" placeholder="0" oninput="updateSaleRow(${index}, 'saleRate', this.value)" class="p-1 border rounded w-16 text-[11px] bg-white">
+          </td>
+          <td class="p-1">
+            <input type="number" step="any" value="${sale.discount || 0}" placeholder="0%" oninput="updateSaleRow(${index}, 'discount', this.value)" class="p-1 border rounded w-12 text-[11px] bg-white">
+          </td>
+          <td class="p-1">
+            <input type="number" step="any" value="${sale.brokerage || 0}" placeholder="0%" oninput="updateSaleRow(${index}, 'brokerage', this.value)" class="p-1 border rounded w-12 text-[11px] bg-white">
+          </td>
+          <td class="p-1 text-right font-semibold text-slate-800">
+            ₹${Number(sale.saleAmount || 0).toLocaleString('en-IN', {maximumFractionDigits: 1})}
+          </td>
+          <td class="p-1 text-right font-bold ${sale.profit >= 0 ? 'text-emerald-700' : 'text-rose-600'}">
+            ₹${Number(sale.profit || 0).toLocaleString('en-IN', {maximumFractionDigits: 1})}
+          </td>
+          <td class="p-1 text-center">
+            <button type="button" onclick="removeSaleRow(${index})" class="text-rose-600 hover:text-rose-900 font-bold text-xs p-1">🗑️</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function addSaleRow() {
+      const today = new Date().toISOString().split('T')[0];
+      const defaultRate = parseFloat(document.getElementById('formCostRate').value) || 0;
+      const defaultBasis = document.getElementById('formRateBasis').value === 'line' ? 'line' : 'weight';
+
+      currentModalSales.push({
+        id: Date.now() + Math.random(),
+        date: today,
+        customer: '',
+        payMode: 'Cash',
+        soldLines: 0,
+        soldWeight: 0,
+        rateBasis: defaultBasis,
+        saleRate: defaultRate,
+        discount: 0,
+        brokerage: 0,
+        saleAmount: 0,
+        profit: 0
+      });
+      renderModalSalesTable();
+      calculateTotals();
+    }
+
+    function updateSaleRow(index, field, value) {
+      if (!currentModalSales[index]) return;
+      const numFields = ['soldLines', 'soldWeight', 'saleRate', 'discount', 'brokerage'];
+      currentModalSales[index][field] = numFields.includes(field) ? parseFloat(value) || 0 : value;
+
+      calculateTotals();
+    }
+
+    function removeSaleRow(index) {
+      currentModalSales.splice(index, 1);
+      renderModalSalesTable();
+      calculateTotals();
+    }
+
+    // Calculation of Balances, Costs & Net Profits
+    function computeValues(item) {
+      const isBuyLine = item.rateBasis === 'line';
+      const buyLine = Number(item.line) || 0;
+      const buyWeight = Number(item.weight) || 0;
+      const buyCostRate = Number(item.costRate) || 0;
+      
+      const buyMultiplier = isBuyLine ? buyLine : buyWeight;
+      const baseCost = buyMultiplier * buyCostRate;
+      const buyDiscount = Number(item.buyDiscount) || 0;
+      const costAfterDisc = baseCost * (1 - (buyDiscount / 100));
+      const buyBrokerage = Number(item.buyBrokerage) || 0;
+      const buyBrokerageAmt = costAfterDisc * (buyBrokerage / 100);
+      const totalCost = costAfterDisc + buyBrokerageAmt;
+      const effectiveCostPerUnit = buyMultiplier > 0 ? (totalCost / buyMultiplier) : buyCostRate;
+
+      const sales = Array.isArray(item.sales) ? item.sales : [];
+      let totalSoldLines = 0;
+      let totalSoldWeight = 0;
+      let totalSaleAmount = 0;
+      let totalProfit = 0;
+
+      sales.forEach(s => {
+        const sLines = Number(s.soldLines || (s.rateBasis === 'line' ? s.soldQty : 0)) || 0;
+        const sWeight = Number(s.soldWeight || (s.rateBasis !== 'line' ? s.soldQty : 0)) || 0;
+        const sBasis = s.rateBasis || (item.rateBasis === 'line' ? 'line' : 'weight');
+        const sRate = Number(s.saleRate) || 0;
+        const sDisc = Number(s.discount) || 0;
+        const sBrok = Number(s.brokerage) || 0;
+
+        const multiplier = sBasis === 'line' ? sLines : sWeight;
+        const rawSale = multiplier * sRate;
+        const saleAfterDisc = rawSale * (1 - (sDisc / 100));
+        const saleBrokAmt = saleAfterDisc * (sBrok / 100);
+        const netSaleReceived = saleAfterDisc - saleBrokAmt;
+
+        const costUnits = isBuyLine ? sLines : sWeight;
+        const costOfSoldPortion = costUnits * effectiveCostPerUnit;
+        const sProf = netSaleReceived - costOfSoldPortion;
+
+        totalSoldLines += sLines;
+        totalSoldWeight += sWeight;
+        totalSaleAmount += netSaleReceived;
+        totalProfit += sProf;
+      });
+
+      const balLines = Math.max(0, buyLine - totalSoldLines);
+      const balWeight = Math.max(0, buyWeight - totalSoldWeight);
+
+      return { totalCost, effectiveCostPerUnit, totalSale: totalSaleAmount, profit: totalProfit, totalSoldLines, totalSoldWeight, balLines, balWeight };
+    }
+
+    function calculateTotals() {
+      const basis = document.getElementById('formRateBasis').value;
+      const isLine = basis === 'line';
+      const line = parseFloat(document.getElementById('formLine').value) || 0;
+      const weight = parseFloat(document.getElementById('formWeight').value) || 0;
+      const costRate = parseFloat(document.getElementById('formCostRate').value) || 0;
+      const buyDiscount = parseFloat(document.getElementById('formBuyDiscount').value) || 0;
+      const buyBrokerage = parseFloat(document.getElementById('formBuyBrokerage').value) || 0;
+
+      const buyMultiplier = isLine ? line : weight;
+      const baseCost = buyMultiplier * costRate;
+      const costAfterDisc = baseCost * (1 - (buyDiscount / 100));
+      const buyBrokerageAmt = costAfterDisc * (buyBrokerage / 100);
+      const totalCost = costAfterDisc + buyBrokerageAmt;
+      const effectiveCostPerUnit = buyMultiplier > 0 ? (totalCost / buyMultiplier) : costRate;
+
+      document.getElementById('previewBaseCost').innerText = '₹' + baseCost.toLocaleString('en-IN', { maximumFractionDigits: 1 });
+      document.getElementById('previewCostAfterDisc').innerText = '₹' + costAfterDisc.toLocaleString('en-IN', { maximumFractionDigits: 1 });
+      document.getElementById('previewBuyBrokerageAmt').innerText = '₹' + buyBrokerageAmt.toLocaleString('en-IN', { maximumFractionDigits: 1 });
+      document.getElementById('previewCost').innerText = '₹' + totalCost.toLocaleString('en-IN', { maximumFractionDigits: 1 });
+
+      let sumSoldLines = 0;
+      let sumSoldWeight = 0;
+      let sumSaleAmount = 0;
+      let sumProfit = 0;
+
+      currentModalSales.forEach(s => {
+        const sLines = Number(s.soldLines) || 0;
+        const sWeight = Number(s.soldWeight) || 0;
+        const sBasis = s.rateBasis || 'line';
+        const rate = Number(s.saleRate) || 0;
+        const disc = Number(s.discount) || 0;
+        const brok = Number(s.brokerage) || 0;
+
+        const multiplier = sBasis === 'line' ? sLines : sWeight;
+        const rawSale = multiplier * rate;
+        const saleAfterDisc = rawSale * (1 - (disc / 100));
+        const saleBrokAmt = saleAfterDisc * (brok / 100);
+        const netSaleReceived = saleAfterDisc - saleBrokAmt;
+
+        const costUnits = isLine ? sLines : sWeight;
+        const costOfSoldPortion = costUnits * effectiveCostPerUnit;
+        const prof = netSaleReceived - costOfSoldPortion;
+
+        s.saleAmount = netSaleReceived;
+        s.profit = prof;
+        sumSoldLines += sLines;
+        sumSoldWeight += sWeight;
+        sumSaleAmount += netSaleReceived;
+        sumProfit += prof;
+      });
+
+      const balLines = Math.max(0, line - sumSoldLines);
+      const balWeight = Math.max(0, weight - sumSoldWeight);
+      const unit = document.getElementById('formWeightUnit').value;
+
+      document.getElementById('previewSaleAmount').innerText = '₹' + sumSaleAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+      document.getElementById('previewProfit').innerText = '₹' + sumProfit.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+      document.getElementById('previewBalance').innerText = `${balLines.toLocaleString('en-IN')} lines | ${balWeight.toLocaleString('en-IN')} ${unit} left`;
+    }
+
+    function saveToStorage() {
+      localStorage.setItem('kk_gems_stock', JSON.stringify(stockData));
+      updateDropdownFilters();
+      renderStock();
+    }
+
+    function toggleItemSelection(id, checked) {
+      if (checked) selectedItemIds.add(id);
+      else selectedItemIds.delete(id);
+      updateSelectionState();
+    }
+
+    function toggleSelectAll(checked) {
+      if (checked) currentFilteredIds.forEach(id => selectedItemIds.add(id));
+      else currentFilteredIds.forEach(id => selectedItemIds.delete(id));
+      updateSelectionState();
+      renderStock();
+    }
+
+    function updateSelectionState() {
+      const btn = document.getElementById('btnBulkDelete');
+      const count = selectedItemIds.size;
+      document.getElementById('selectedCount').innerText = count;
+
+      if (count > 0) btn.classList.remove('hidden');
+      else btn.classList.add('hidden');
+
+      const master = document.getElementById('selectAllCheckbox');
+      master.checked = currentFilteredIds.length > 0 && currentFilteredIds.every(id => selectedItemIds.has(id));
+    }
+
+    async function deleteSelectedItems() {
+      const count = selectedItemIds.size;
+      if (count === 0) return;
+
+      if (!confirm(`Delete ${count} selected item(s) from stock and Google Drive?`)) return;
+
+      stockData = stockData.filter(item => !selectedItemIds.has(item.id));
+      selectedItemIds.clear();
+      updateSelectionState();
+      saveToStorage();
+      await sendToDrive({ action: "SYNC_ALL", items: stockData });
+    }
+
+    function updateDropdownFilters() {
+      const stoneSelect = document.getElementById('filterStone');
+      const currentStone = stoneSelect.value;
+      const stones = [...new Set(stockData.map(i => i.stone).filter(Boolean))].sort();
+      stoneSelect.innerHTML = '<option value="">All Stone Names</option>';
+      stones.forEach(s => stoneSelect.innerHTML += `<option value="${s}">${s}</option>`);
+      stoneSelect.value = currentStone;
+
+      const shepSelect = document.getElementById('filterShep');
+      const currentShep = shepSelect.value;
+      const sheps = [...new Set(stockData.map(i => i.shep || i.category).filter(Boolean))].sort();
+      shepSelect.innerHTML = '<option value="">All Shep</option>';
+      sheps.forEach(c => shepSelect.innerHTML += `<option value="${c}">${c}</option>`);
+      shepSelect.value = currentShep;
+
+      const natureSelect = document.getElementById('filterNature');
+      const currentNature = natureSelect.value;
+      const natures = [...new Set(stockData.map(i => i.nature).filter(Boolean))].sort();
+      natureSelect.innerHTML = '<option value="">All Nature</option>';
+      natures.forEach(n => natureSelect.innerHTML += `<option value="${n}">${n}</option>`);
+      natureSelect.value = currentNature;
+    }
+
+    function renderStock() {
+      const search = document.getElementById('searchInput').value.toLowerCase();
+      const filterStone = document.getElementById('filterStone').value;
+      const filterShep = document.getElementById('filterShep').value;
+      const filterUnit = document.getElementById('filterUnit').value;
+      const filterQual = document.getElementById('filterQuality').value;
+      const filterNature = document.getElementById('filterNature').value;
+
+      const tbody = document.getElementById('stockTableBody');
+      tbody.innerHTML = '';
+
+      let grandCost = 0, grandSale = 0, grandProfit = 0, grandLines = 0;
+      let totalGm = 0, totalKg = 0, totalCt = 0;
+      let count = 0;
+      currentFilteredIds = [];
+
+      // Sort items in ASCENDING ORDER by Stone Name
+      const sortedData = [...stockData].sort((a, b) => {
+        const nameA = (a.stone || '').toLowerCase();
+        const nameB = (b.stone || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+
+      sortedData.forEach((item) => {
+        const itemUnit = item.weightUnit || 'gm';
+        const itemBasis = item.rateBasis || 'line';
+        const itemShep = item.shep || item.category || '-';
+
+        const salesCust = (item.sales || []).map(s => s.customer).join(' ');
+        const matchesSearch = !search || 
+          (item.stone && item.stone.toLowerCase().includes(search)) ||
+          (item.desc && item.desc.toLowerCase().includes(search)) ||
+          (item.supplierName && item.supplierName.toLowerCase().includes(search)) ||
+          salesCust.toLowerCase().includes(search) ||
+          (itemShep && itemShep.toLowerCase().includes(search)) ||
+          (item.nature && item.nature.toLowerCase().includes(search)) ||
+          (item.note && item.note.toLowerCase().includes(search));
+
+        const matchesStone = !filterStone || item.stone === filterStone;
+        const matchesShep = !filterShep || itemShep === filterShep;
+        const matchesUnit = !filterUnit || itemBasis === filterUnit;
+        const matchesQual = !filterQual || item.quality === filterQual;
+        const matchesNature = !filterNature || item.nature === filterNature;
+
+        if (matchesSearch && matchesStone && matchesShep && matchesUnit && matchesQual && matchesNature) {
+          count++;
+          currentFilteredIds.push(item.id);
+          const isChecked = selectedItemIds.has(item.id);
+
+          const { totalCost, totalSale, profit, balLines, balWeight } = computeValues(item);
+          grandCost += totalCost;
+          grandSale += totalSale;
+          grandProfit += profit;
+          grandLines += balLines;
+
+          if (itemUnit === 'kg') totalKg += balWeight;
+          else if (itemUnit === 'ct') totalCt += balWeight;
+          else totalGm += balWeight;
+
+          let basisLabel = 'Per Line';
+          if (itemBasis === 'gm') basisLabel = 'Per Gram (gm)';
+          else if (itemBasis === 'kg') basisLabel = 'Per Kilogram (kg)';
+          else if (itemBasis === 'ct') basisLabel = 'Per Carat (ct)';
+
+          const hasPhoto = item.image && item.image.length > 20;
+
+          // Sequence: Photo, stone name, description, shep, quality, nature, supplier, Lines, Bunch, Weight, unit, rate basis, buy rate, cost, net sales, net profit, note, action
+          const tr = document.createElement('tr');
+          tr.className = `border-b border-slate-200 transition-colors cursor-pointer ${isChecked ? 'bg-indigo-50/60' : ''}`;
+          tr.innerHTML = `
+            <td class="text-center" onclick="event.stopPropagation()">
+              <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleItemSelection(${item.id}, this.checked)" class="w-3.5 h-3.5 rounded text-indigo-600 cursor-pointer">
+            </td>
+            
+            <!-- 1. Photo -->
+            <td class="text-center" onclick="event.stopPropagation()">
+              ${hasPhoto ? 
+                `<img src="${item.image}" onclick="viewZoomImage('${item.image}')" class="w-7 h-7 rounded border object-cover mx-auto hover:scale-125 transition-transform shadow-xs">` : 
+                `<span class="text-slate-300 text-[10px]">—</span>`}
+            </td>
+
+            <!-- 2. Stone Name -->
+            <td class="font-bold text-indigo-950 bg-indigo-50/40" onclick="editEntry(${item.id})">${item.stone || '-'}</td>
+            
+            <!-- 3. Description -->
+            <td class="font-medium text-slate-800" onclick="editEntry(${item.id})">${item.desc || '-'}</td>
+            
+            <!-- 4. Shep -->
+            <td onclick="editEntry(${item.id})"><span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">${itemShep}</span></td>
+            
+            <!-- 5. Quality -->
+            <td class="text-slate-500" onclick="editEntry(${item.id})">${item.quality || '-'}</td>
+            
+            <!-- 6. Nature -->
+            <td class="text-slate-700 font-medium" onclick="editEntry(${item.id})">${item.nature || '-'}</td>
+            
+            <!-- 7. Supplier -->
+            <td class="text-slate-600 font-medium" onclick="editEntry(${item.id})">${item.supplierName || '-'}</td>
+            
+            <!-- 8. Lines: Only Remaining Balance -->
+            <td class="text-right font-bold text-slate-900" onclick="editEntry(${item.id})">
+              ${balLines}
+            </td>
+            
+            <!-- 9. Bunch -->
+            <td class="text-right text-slate-600" onclick="editEntry(${item.id})">${item.bunch || 0}</td>
+            
+            <!-- 10. Weight: Only Remaining Balance -->
+            <td class="text-right font-bold text-slate-900" onclick="editEntry(${item.id})">
+              ${balWeight ? balWeight.toLocaleString('en-IN') : '0'}
+            </td>
+
+            <!-- 11. Unit -->
+            <td class="text-center"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${itemUnit === 'ct' ? 'bg-purple-100 text-purple-700' : itemUnit === 'kg' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}">${itemUnit}</span></td>
+            
+            <!-- 12. Rate Basis -->
+            <td><span class="px-1.5 py-0.5 text-[10px] rounded ${itemBasis === 'line' ? 'bg-sky-50 text-sky-700 border border-sky-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}">${basisLabel}</span></td>
+            
+            <!-- 13. Buy Rate -->
+            <td class="text-right text-slate-600">₹${Number(item.costRate || 0).toLocaleString('en-IN')}</td>
+            
+            <!-- 14. Cost -->
+            <td class="text-right font-medium text-slate-800">₹${totalCost.toLocaleString('en-IN', {maximumFractionDigits: 1})}</td>
+            
+            <!-- 15. Net Sales -->
+            <td class="text-right font-semibold text-indigo-700">₹${totalSale.toLocaleString('en-IN', {maximumFractionDigits: 1})}</td>
+            
+            <!-- 16. Net Profit -->
+            <td class="text-right font-bold ${profit >= 0 ? 'text-emerald-700' : 'text-rose-600'}">₹${profit.toLocaleString('en-IN', {maximumFractionDigits: 1})}</td>
+            
+            <!-- 17. Note -->
+            <td class="text-slate-400 max-w-[120px] truncate" title="${item.note || ''}">${item.note || '-'}</td>
+            
+            <!-- 18. Action -->
+            <td class="text-center whitespace-nowrap" onclick="event.stopPropagation()">
+              <button onclick="editEntry(${item.id})" class="px-2.5 py-1 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded font-semibold border border-indigo-200">View / Sales</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        }
+      });
+
+      document.getElementById('statItems').innerText = count;
+      document.getElementById('statLines').innerText = grandLines.toLocaleString('en-IN');
+      document.getElementById('statWeights').innerText = `${totalGm.toLocaleString('en-IN')} gm | ${totalKg.toLocaleString('en-IN')} kg | ${totalCt.toLocaleString('en-IN')} ct`;
+      document.getElementById('statCost').innerText = '₹' + grandCost.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+      document.getElementById('statSale').innerText = '₹' + grandSale.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+      document.getElementById('statProfit').innerText = '₹' + grandProfit.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+
+      updateSelectionState();
+    }
+
+    function openModal() {
+      document.getElementById('stockForm').reset();
+      document.getElementById('entryId').value = '';
+      document.getElementById('formImageBase64').value = '';
+      document.getElementById('imagePreviewContainer').innerHTML = `<span class="text-[10px] text-slate-400">No Image</span>`;
+      document.getElementById('modalTitle').innerText = 'Add New Gem Stock';
+      document.getElementById('formSupplierName').value = '';
+      document.getElementById('formBuyPayMode').value = 'Cash';
+      document.getElementById('formWeightUnit').value = 'gm';
+      document.getElementById('formRateBasis').value = 'line';
+      document.getElementById('formNature').value = 'Natural';
+      document.getElementById('formBuyDate').value = new Date().toISOString().split('T')[0];
+      document.getElementById('formBuyDiscount').value = '0';
+      document.getElementById('formBuyBrokerage').value = '0';
+
+      currentModalSales = [];
+      renderModalSalesTable();
+      calculateTotals();
+
+      document.getElementById('itemModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('itemModal').classList.add('hidden');
+    }
+
+    function saveEntry(e) {
+      e.preventDefault();
+      const id = document.getElementById('entryId').value;
+      const unit = document.getElementById('formWeightUnit').value;
+
+      const entry = {
+        id: id ? Number(id) : Date.now(),
+        stone: document.getElementById('formStone').value.trim(),
+        desc: document.getElementById('formDesc').value.trim(),
+        shep: document.getElementById('formShep').value.trim() || 'Uncategorized',
+        quality: document.getElementById('formQuality').value.trim() || 'Standard',
+        nature: document.getElementById('formNature').value.trim() || 'Natural',
+        supplierName: document.getElementById('formSupplierName').value.trim(),
+        buyPayMode: document.getElementById('formBuyPayMode').value,
+        buyDate: document.getElementById('formBuyDate').value,
+        line: parseFloat(document.getElementById('formLine').value) || 0,
+        bunch: parseFloat(document.getElementById('formBunch').value) || 0,
+        weight: parseFloat(document.getElementById('formWeight').value) || 0,
+        weightUnit: unit,
+        rateBasis: document.getElementById('formRateBasis').value,
+        costRate: parseFloat(document.getElementById('formCostRate').value) || 0,
+        buyDiscount: parseFloat(document.getElementById('formBuyDiscount').value) || 0,
+        buyBrokerage: parseFloat(document.getElementById('formBuyBrokerage').value) || 0,
+        sales: currentModalSales,
+        image: document.getElementById('formImageBase64').value || '',
+        note: document.getElementById('formNote').value.trim()
+      };
+
+      const computed = computeValues(entry);
+      entry.totalCost = computed.totalCost;
+      entry.effectiveCostRate = computed.effectiveCostPerUnit;
+      entry.totalSale = computed.totalSale;
+      entry.profit = computed.profit;
+      entry.balLines = computed.balLines;
+      entry.balWeight = computed.balWeight;
+
+      if (id) {
+        const idx = stockData.findIndex(item => item.id === Number(id));
+        if (idx !== -1) stockData[idx] = entry;
+      } else {
+        stockData.unshift(entry);
+      }
+
+      saveToStorage();
+      closeModal();
+      sendToDrive({ action: "UPSERT", item: entry });
+    }
+
+    function editEntry(id) {
+      const item = stockData.find(i => i.id === id);
+      if (!item) return;
+
+      document.getElementById('entryId').value = item.id;
+      document.getElementById('formStone').value = item.stone || '';
+      document.getElementById('formDesc').value = item.desc || '';
+      document.getElementById('formShep').value = item.shep || item.category || '';
+      document.getElementById('formQuality').value = item.quality || '';
+      document.getElementById('formNature').value = item.nature || 'Natural';
+      document.getElementById('formSupplierName').value = item.supplierName || '';
+      document.getElementById('formBuyPayMode').value = item.buyPayMode || 'Cash';
+      document.getElementById('formBuyDate').value = item.buyDate || '';
+      document.getElementById('formLine').value = item.line || '';
+      document.getElementById('formBunch').value = item.bunch || '';
+      document.getElementById('formWeight').value = item.weight || '';
+      document.getElementById('formWeightUnit').value = item.weightUnit || 'gm';
+
+      let basis = item.rateBasis;
+      if (basis === 'weight') basis = item.weightUnit || 'gm';
+      document.getElementById('formRateBasis').value = basis || 'line';
+      document.getElementById('formCostRate').value = item.costRate || '';
+      document.getElementById('formBuyDiscount').value = item.buyDiscount || 0;
+      document.getElementById('formBuyBrokerage').value = item.buyBrokerage || 0;
+      document.getElementById('formNote').value = item.note || '';
+
+      const imgVal = item.image || '';
+      document.getElementById('formImageBase64').value = imgVal;
+      document.getElementById('imagePreviewContainer').innerHTML = imgVal ? 
+        `<img src="${imgVal}" class="w-full h-full object-cover">` : 
+        `<span class="text-[10px] text-slate-400">No Image</span>`;
+
+      currentModalSales = (Array.isArray(item.sales) ? item.sales : []).map(s => ({
+        ...s,
+        soldLines: s.soldLines !== undefined ? s.soldLines : (s.rateBasis === 'line' ? s.soldQty : 0),
+        soldWeight: s.soldWeight !== undefined ? s.soldWeight : (s.rateBasis !== 'line' ? s.soldQty : 0),
+        rateBasis: s.rateBasis || (item.rateBasis === 'line' ? 'line' : 'weight')
+      }));
+
+      document.getElementById('modalTitle').innerText = 'Stock & Sales Manager';
+      renderModalSalesTable();
+      calculateTotals();
+      document.getElementById('itemModal').classList.remove('hidden');
+    }
+
+    function importExcel(evt) {
+      const file = evt.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rawJson = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        const imported = [];
+        for (let r = 1; r < rawJson.length; r++) {
+          const row = rawJson[r];
+          if (!row || row.length === 0) continue;
+
+          const desc = row[2] || row[1] || '';
+          if (!desc || desc.toString().includes('Item Desc')) continue;
+
+          const descStr = String(desc).trim();
+          const stoneExtracted = row[7] || descStr.split(' ')[0] || 'Gem';
+          const weightVal = parseFloat(row[5]) || 0;
+
+          const entry = {
+            id: Date.now() + r,
+            stone: String(stoneExtracted).trim(),
+            desc: descStr,
+            shep: row[1] ? String(row[1]).trim() : 'खारे',
+            quality: 'Standard',
+            nature: 'Natural',
+            supplierName: '',
+            buyPayMode: 'Cash',
+            buyDate: new Date().toISOString().split('T')[0],
+            line: parseFloat(row[3]) || 0,
+            bunch: parseFloat(row[4]) || 0,
+            weight: weightVal,
+            weightUnit: 'gm',
+            rateBasis: weightVal > 0 ? 'gm' : 'line',
+            costRate: 0,
+            buyDiscount: 0,
+            buyBrokerage: 0,
+            sales: [],
+            image: '',
+            note: row[6] ? String(row[6]) : ''
+          };
+
+          const comp = computeValues(entry);
+          entry.totalCost = comp.totalCost;
+          entry.effectiveCostRate = comp.effectiveCostPerUnit;
+          entry.totalSale = comp.totalSale;
+          entry.profit = comp.profit;
+          entry.balLines = comp.balLines;
+          entry.balWeight = comp.balWeight;
+
+          imported.push(entry);
+        }
+
+        if (imported.length > 0) {
+          stockData = [...imported, ...stockData];
+          saveToStorage();
+          sendToDrive({ action: "SYNC_ALL", items: stockData });
+          alert(`Imported ${imported.length} items and syncing to Google Drive!`);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // MULTI-SHEET EXCEL EXPORT
+    function exportExcel() {
+      const summaryRows = stockData.map(item => {
+        const { totalCost, effectiveCostPerUnit, totalSale, profit, totalSoldLines, totalSoldWeight, balLines, balWeight } = computeValues(item);
+        const unit = item.weightUnit || 'gm';
+        let basisText = 'Per Line';
+        if (item.rateBasis === 'gm') basisText = 'Per Gram (gm)';
+        else if (item.rateBasis === 'kg') basisText = 'Per Kilogram (kg)';
+        else if (item.rateBasis === 'ct') basisText = 'Per Carat (ct)';
+
+        return {
+          "Stock ID": item.id,
+          "Stone Name": item.stone,
+          "Description": item.desc,
+          "Shep": item.shep || item.category || '',
+          "Quality": item.quality,
+          "Nature": item.nature,
+          "Supplier (Buy From)": item.supplierName || '',
+          "Buy Pay Mode": item.buyPayMode || 'Cash',
+          "Buy Date": item.buyDate || '',
+          "Purchased Lines": item.line || 0,
+          "Bunch": item.bunch || 0,
+          "Purchased Weight": item.weight || 0,
+          "Weight Unit": unit,
+          "Rate Basis": basisText,
+          "Buy Rate": item.costRate || 0,
+          "Cost Discount %": item.buyDiscount || 0,
+          "Cost Brokerage %": item.buyBrokerage || 0,
+          "Final Net Cost": totalCost,
+          "Total Sold Lines": totalSoldLines,
+          "Total Sold Weight": totalSoldWeight,
+          "Total Net Sales": totalSale,
+          "Total Net Profit": profit,
+          "Remaining Balance Lines": balLines,
+          "Remaining Balance Weight": balWeight,
+          "Note": item.note || ''
+        };
+      });
+
+      const salesHistoryRows = [];
+      stockData.forEach(item => {
+        const sales = Array.isArray(item.sales) ? item.sales : [];
+        sales.forEach((s, idx) => {
+          const sLines = Number(s.soldLines) || 0;
+          const sWeight = Number(s.soldWeight) || 0;
+          const sBasis = s.rateBasis || 'line';
+          const multiplier = sBasis === 'line' ? sLines : sWeight;
+          const rawSale = multiplier * (Number(s.saleRate) || 0);
+          const saleAfterDisc = rawSale * (1 - ((Number(s.discount) || 0) / 100));
+          const brokAmt = saleAfterDisc * ((Number(s.brokerage) || 0) / 100);
+
+          salesHistoryRows.push({
+            "Stock ID": item.id,
+            "Stone Name": item.stone,
+            "Description": item.desc,
+            "Shep": item.shep || item.category || '',
+            "Sale Transaction #": idx + 1,
+            "Date of Sale": s.date || '',
+            "Customer Name (Sale To)": s.customer || '',
+            "Payment Received Mode": s.payMode || 'Cash',
+            "Sold Lines": sLines,
+            "Sold Weight": sWeight,
+            "Sale Rate Basis": sBasis === 'line' ? 'Per Line' : 'Per Weight',
+            "Sale Rate (₹)": s.saleRate || 0,
+            "Sale Discount %": s.discount || 0,
+            "Sale Brokerage %": s.brokerage || 0,
+            "Brokerage Amount Paid (₹)": brokAmt,
+            "Net Sale Received (₹)": s.saleAmount || 0,
+            "Realized Net Profit (₹)": s.profit || 0,
+            "Supplier (Buy From)": item.supplierName || '',
+            "Buy Date": item.buyDate || ''
+          });
+        });
+      });
+
+      const wb = XLSX.utils.book_new();
+      const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+      XLSX.utils.book_append_sheet(wb, wsSummary, "Master Stock Summary");
+
+      const wsSales = XLSX.utils.json_to_sheet(salesHistoryRows.length > 0 ? salesHistoryRows : [
+        { "Note": "No customer sales recorded yet." }
+      ]);
+      XLSX.utils.book_append_sheet(wb, wsSales, "Customer Sales & Brokerage");
+
+      XLSX.writeFile(wb, "K_K_GEMS_Complete_Brokerage_Report.xlsx");
+    }
+
+    // LANDSCAPE PDF EXPORT
+    function exportPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+
+      doc.setFontSize(18);
+      doc.setTextColor(30, 27, 75);
+      doc.text("K. K. GEMS", 40, 40);
+
+      doc.setFontSize(10);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Stock Inventory, Valuation & Profit Report", 40, 56);
+      doc.text(`Generated on: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`, 40, 70);
+
+      const sorted = [...stockData].sort((a, b) => (a.stone || '').localeCompare(b.stone || ''));
+
+      let sumCost = 0, sumSales = 0, sumProfit = 0, sumBalLines = 0;
+      const tableRows = [];
+
+      sorted.forEach((item, index) => {
+        const { totalCost, totalSale, profit, balLines, balWeight } = computeValues(item);
+        sumCost += totalCost;
+        sumSales += totalSale;
+        sumProfit += profit;
+        sumBalLines += balLines;
+
+        tableRows.push([
+          index + 1,
+          item.stone || '-',
+          item.desc || '-',
+          item.shep || item.category || '-',
+          item.quality || '-',
+          item.nature || '-',
+          item.supplierName || '-',
+          balLines,
+          item.bunch || 0,
+          balWeight ? balWeight.toLocaleString('en-IN') : '0',
+          item.weightUnit || 'gm',
+          item.rateBasis === 'line' ? 'Line' : 'Weight',
+          'Rs. ' + Number(item.costRate || 0).toLocaleString('en-IN'),
+          'Rs. ' + Math.round(totalCost).toLocaleString('en-IN'),
+          'Rs. ' + Math.round(totalSale).toLocaleString('en-IN'),
+          'Rs. ' + Math.round(profit).toLocaleString('en-IN')
+        ]);
+      });
+
+      doc.setDrawColor(226, 232, 240);
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(40, 82, 762, 34, 4, 4, 'FD');
+
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`Total Items: ${sorted.length} | Balance Lines: ${sumBalLines.toLocaleString('en-IN')} | Total Cost: Rs. ${Math.round(sumCost).toLocaleString('en-IN')} | Total Sales: Rs. ${Math.round(sumSales).toLocaleString('en-IN')} | Net Profit: Rs. ${Math.round(sumProfit).toLocaleString('en-IN')}`, 50, 103);
+
+      doc.autoTable({
+        startY: 126,
+        head: [[
+          '#', 'Stone', 'Description', 'Shep', 'Quality', 'Nature', 'Supplier', 
+          'Bal Lines', 'Bunch', 'Bal Weight', 'Unit', 'Basis', 'Buy Rate', 'Cost', 'Net Sales', 'Net Profit'
+        ]],
+        body: tableRows,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [30, 27, 75],
+          textColor: [255, 255, 255],
+          fontSize: 7.5,
+          fontStyle: 'bold',
+          halign: 'left'
+        },
+        bodyStyles: {
+          fontSize: 7,
+          cellPadding: 4,
+          textColor: [30, 41, 59]
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 20 },
+          7: { halign: 'right' },
+          8: { halign: 'right' },
+          9: { halign: 'right' },
+          12: { halign: 'right' },
+          13: { halign: 'right', fontStyle: 'bold' },
+          14: { halign: 'right', fontStyle: 'bold' },
+          15: { halign: 'right', fontStyle: 'bold', textColor: [22, 101, 52] }
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252]
+        },
+        didDrawPage: function(data) {
+          const str = 'Page ' + doc.internal.getNumberOfPages();
+          doc.setFontSize(8);
+          doc.setTextColor(148, 163, 184);
+          doc.text(str, data.settings.margin.left, doc.internal.pageSize.height - 15);
+          doc.text('K. K. GEMS Confidential Inventory Record', doc.internal.pageSize.width - 200, doc.internal.pageSize.height - 15);
+        }
+      });
+
+      doc.save(`K_K_GEMS_Stock_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+    }
+
+    updateDropdownFilters();
+    renderStock();
+    fetchFromGoogleDrive();
+  </script>
+</body>
+</html>
