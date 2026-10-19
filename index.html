@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>K. K. GEMS - Stock Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <style>
+    th, td {
+      white-space: nowrap;
+      padding: 6px 12px;
+    }
+    tbody tr:hover {
+      background-color: #f1f5f9;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background-color: #e2e8f0;
+      z-index: 10;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .pulse-sync {
+      animation: pulse 1.5s infinite;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 text-xs antialiased h-screen flex flex-col overflow-hidden">
+
+  <!-- Top Navigation & Summary Bar -->
+  <header class="bg-indigo-900 text-white flex-shrink-0 shadow z-30">
+    <div class="px-4 py-2 flex flex-wrap justify-between items-center gap-2">
+      <div class="flex items-center gap-3">
+        <h1 class="text-base font-bold tracking-wide">K. K. GEMS</h1>
+        <span class="text-[11px] text-indigo-200">Stock Inventory</span>
+        <span id="syncIndicator" class="text-[10px] bg-indigo-800 border border-indigo-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Connected
+        </span>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-2">
+        <!-- Top Bulk Delete Button (Only active when items are selected) -->
+        <button id="btnBulkDelete" onclick="deleteSelectedItems()" class="hidden bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded text-xs font-semibold shadow flex items-center gap-1 transition-all">
+          🗑️ Delete (<span id="selectedCount">0</span>)
+        </button>
+
+        <button onclick="fetchFromGoogleDrive()" class="bg-indigo-800 hover:bg-indigo-700 px-2.5 py-1.5 rounded text-xs shadow flex items-center gap-1 border border-indigo-700">
+          🔄 Refresh
+        </button>
+        <button onclick="openModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-semibold shadow">
+          + Add Item
+        </button>
+        <label for="excelInput" class="bg-indigo-800 hover:bg-indigo-700 px-3 py-1.5 rounded text-xs cursor-pointer shadow border border-indigo-700">
+          📥 Import Excel
+        </label>
+        <input type="file" id="excelInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="importExcel(event)">
+        <button onclick="exportExcel()" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded text-xs font-medium shadow">
+          📤 Export Excel
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Totals Bar -->
+    <div class="bg-indigo-950 px-4 py-1.5 flex flex-wrap gap-4 text-[11px] border-t border-indigo-800/80 items-center">
+      <div>Entries: <span id="statItems" class="font-bold text-white">0</span></div>
+      <div>Lines: <span id="statLines" class="font-bold text-sky-300">0</span></div>
+      <div>Weights: <span id="statWeights" class="font-bold text-sky-300">0 gm | 0 kg | 0 ct</span></div>
+      <div>Total Cost: <span id="statCost" class="font-bold text-emerald-400">₹0</span></div>
+      <div>Total Sale: <span id="statSale" class="font-bold text-amber-300">₹0</span></div>
+    </div>
+  </header>
+
+  <!-- Filter & Search Section -->
+  <section class="bg-white border-b border-slate-200 px-4 py-2 flex flex-wrap gap-2 items-center flex-shrink-0 z-20 shadow-sm">
+    <input type="text" id="searchInput" placeholder="🔍 Search stone, description, category..." 
+           class="flex-1 min-w-[180px] px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-indigo-600 outline-none"
+           oninput="renderStock()">
+
+    <!-- Stone Name Filter -->
+    <select id="filterStone" onchange="renderStock()" class="px-2 py-1.5 border border-slate-300 rounded bg-slate-50 text-xs font-medium text-indigo-900">
+      <option value="">All Stone Names</option>
+    </select>
+
+    <!-- Category Filter -->
+    <select id="filterCategory" onchange="renderStock()" class="px-2 py-1.5 border border-slate-300 rounded bg-slate-50 text-xs">
+      <option value="">All Categories</option>
+    </select>
+
+    <!-- Unit / Rate Basis Filter (includes Line) -->
+    <select id="filterUnit" onchange="renderStock()" class="px-2 py-1.5 border border-slate-300 rounded bg-slate-50 text-xs font-medium text-slate-700">
+      <option value="">All Units / Rate Basis</option>
+      <option value="line">Line (Per Line)</option>
+      <option value="gm">Grams (gm)</option>
+      <option value="kg">Kilograms (kg)</option>
+      <option value="ct">Carats (ct)</option>
+    </select>
+
+    <!-- Quality Filter -->
+    <select id="filterQuality" onchange="renderStock()" class="px-2 py-1.5 border border-slate-300 rounded bg-slate-50 text-xs">
+      <option value="">All Quality</option>
+      <option value="AAA">AAA</option>
+      <option value="AA">AA</option>
+      <option value="A">A</option>
+      <option value="Commercial">Commercial</option>
+      <option value="Standard">Standard</option>
+    </select>
+
+    <!-- Nature Filter -->
+    <select id="filterNature" onchange="renderStock()" class="px-2 py-1.5 border border-slate-300 rounded bg-slate-50 text-xs">
+      <option value="">All Nature</option>
+    </select>
+  </section>
+
+  <!-- Dedicated Table Viewport -->
+  <div class="flex-1 overflow-auto bg-white">
+    <table class="w-full text-left border-collapse">
+      <thead>
+        <tr>
+          <!-- Master Select All Checkbox -->
+          <th class="w-8 text-center">
+            <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)" class="w-3.5 h-3.5 rounded text-indigo-600 cursor-pointer">
+          </th>
+          <th class="w-10 text-center">#</th>
+          <th>Stone Name</th>
+          <th>Item Description</th>
+          <th>Category</th>
+          <th class="text-right">Line</th>
+          <th class="text-right">Bunch</th>
+          <th class="text-right">Weight</th>
+          <th class="text-center">Unit</th>
+          <th>Rate Basis</th>
+          <th class="text-right">Cost Rate</th>
+          <th class="text-right">Sale Rate</th>
+          <th class="text-right">Total Cost</th>
+          <th class="text-right">Total Value</th>
+          <th>Quality</th>
+          <th>Nature</th>
+          <th>Note</th>
+          <th class="text-center">Action</th>
+        </tr>
+      </thead>
+      <tbody id="stockTableBody" class="divide-y divide-slate-200">
+        <!-- Dynamic Rows -->
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Modal: Add / Edit Item -->
+  <div id="itemModal" class="fixed inset-0 bg-black/60 hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-lg rounded-xl shadow-xl overflow-hidden max-h-[95vh] flex flex-col">
+      <div class="px-4 py-3 bg-indigo-900 text-white flex justify-between items-center">
+        <h2 id="modalTitle" class="font-bold text-sm">Add Gem Stock</h2>
+        <button onclick="closeModal()" class="text-indigo-200 hover:text-white font-bold text-lg">&times;</button>
+      </div>
+
+      <form id="stockForm" onsubmit="saveEntry(event)" class="p-4 space-y-3 overflow-y-auto">
+        <input type="hidden" id="entryId">
+
+        <!-- Stone Name & Description in Starting -->
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-medium mb-1">Stone Name (रत्न का नाम) *</label>
+            <input type="text" id="formStone" required placeholder="e.g. रोज, लेपीस, ओपल, कटेला" class="w-full p-2 border rounded text-xs font-semibold">
+          </div>
+          <div>
+            <label class="block font-medium mb-1">Item Description / Cut *</label>
+            <input type="text" id="formDesc" required placeholder="e.g. रोज टम्बल खारे" class="w-full p-2 border rounded text-xs">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2">
+          <div>
+            <label class="block font-medium mb-1">Category</label>
+            <input type="text" id="formCategory" placeholder="e.g. खारे" class="w-full p-2 border rounded text-xs">
+          </div>
+          <div>
+            <label class="block font-medium mb-1">Quality</label>
+            <input type="text" id="formQuality" placeholder="AAA / Standard" class="w-full p-2 border rounded text-xs">
+          </div>
+          <div>
+            <label class="block font-medium mb-1">Nature</label>
+            <input type="text" id="formNature" placeholder="Natural / Treated / Heated" class="w-full p-2 border rounded text-xs">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-medium mb-1">Lines (लड़ी)</label>
+            <input type="number" step="any" id="formLine" placeholder="0" class="w-full p-2 border rounded text-xs" oninput="calculateTotals()">
+          </div>
+          <div>
+            <label class="block font-medium mb-1">Bunch (बंडल)</label>
+            <input type="number" step="any" id="formBunch" placeholder="0" class="w-full p-2 border rounded text-xs">
+          </div>
+        </div>
+
+        <!-- Weight & Unit Definition -->
+        <div class="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded border border-slate-200">
+          <div>
+            <label class="block font-medium mb-1 text-slate-700">Weight Value</label>
+            <input type="number" step="any" id="formWeight" placeholder="0" class="w-full p-2 border rounded text-xs bg-white" oninput="calculateTotals()">
+          </div>
+          <div>
+            <label class="block font-medium mb-1 text-slate-700">Weight Unit</label>
+            <select id="formWeightUnit" class="w-full p-2 border rounded text-xs bg-white font-medium" onchange="onWeightUnitChange(); calculateTotals();">
+              <option value="gm">Gram (gm)</option>
+              <option value="kg">Kilogram (kg)</option>
+              <option value="ct">Carat (ct)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Rate Basis showing all 4 options -->
+        <div class="grid grid-cols-3 gap-2">
+          <div>
+            <label class="block font-medium mb-1">Rate Basis *</label>
+            <select id="formRateBasis" class="w-full p-2 border rounded bg-amber-50 font-semibold text-xs" onchange="onRateBasisChange(); calculateTotals();">
+              <option value="line">Line (Line × Rate)</option>
+              <option value="gm">Weight gm (Gram × Rate)</option>
+              <option value="kg">Weight kg (Kilogram × Rate)</option>
+              <option value="ct">Weight ct (Carat × Rate)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-medium mb-1">Cost Rate (₹)</label>
+            <input type="number" step="any" id="formCostRate" placeholder="0" class="w-full p-2 border rounded text-xs" oninput="calculateTotals()">
+          </div>
+          <div>
+            <label class="block font-medium mb-1">Sale Rate (₹)</label>
+            <input type="number" step="any" id="formSaleRate" placeholder="0" class="w-full p-2 border rounded text-xs" oninput="calculateTotals()">
+          </div>
+        </div>
+
+        <div class="bg-indigo-50 p-2.5 rounded border border-indigo-100 flex justify-between font-medium">
+          <div>Total Cost: <span id="previewCost" class="text-emerald-700 font-bold">₹0.00</span></div>
+          <div>Total Sale: <span id="previewSale" class="text-indigo-800 font-bold">₹0.00</span></div>
+        </div>
+
+        <div>
+          <label class="block font-medium mb-1">Remarks / Note</label>
+          <input type="text" id="formNote" placeholder="Remarks" class="w-full p-2 border rounded text-xs">
+        </div>
+
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="closeModal()" class="w-1/2 py-2 bg-slate-200 text-slate-700 rounded font-medium">Cancel</button>
+          <button type="submit" class="w-1/2 py-2 bg-indigo-700 text-white rounded font-medium shadow">Save to Drive</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
+    // =========================================================================
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxylnNas9s1X9dCbVIEocNVfSPId90JOtI9V6d2rqWqo7Cyv_QbI_XkW2YlSLMD35B9/exec";
+
+    let stockData = JSON.parse(localStorage.getItem('kk_gems_stock')) || [];
+    let selectedItemIds = new Set();
+    let currentFilteredIds = [];
+
+    function updateSyncStatus(text, color = "bg-emerald-400") {
+      const el = document.getElementById('syncIndicator');
+      if (el) {
+        el.innerHTML = `<span class="w-2 h-2 rounded-full ${color}"></span> ${text}`;
+      }
+    }
+
+    async function fetchFromGoogleDrive() {
+      if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR")) return;
+
+      updateSyncStatus("Syncing with Drive...", "bg-amber-400 pulse-sync");
+      try {
+        const res = await fetch(SCRIPT_URL);
+        const json = await res.json();
+        if (json.status === "SUCCESS" && Array.isArray(json.data) && json.data.length > 0) {
+          stockData = json.data;
+          localStorage.setItem('kk_gems_stock', JSON.stringify(stockData));
+          selectedItemIds.clear();
+          updateSelectionState();
+          updateDropdownFilters();
+          renderStock();
+          updateSyncStatus("Synced with Drive", "bg-emerald-400");
+        } else {
+          updateSyncStatus("Connected (Empty)", "bg-emerald-400");
+        }
+      } catch (err) {
+        console.error("Drive Fetch Error:", err);
+        updateSyncStatus("Offline Cache", "bg-yellow-400");
+      }
+    }
+
+    async function sendToDrive(payload) {
+      if (!SCRIPT_URL || SCRIPT_URL.includes("PASTE_YOUR")) return;
+
+      updateSyncStatus("Saving to Drive...", "bg-amber-400 pulse-sync");
+      try {
+        await fetch(SCRIPT_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        updateSyncStatus("Saved to Drive", "bg-emerald-400");
+      } catch (err) {
+        console.error("Drive Post Error:", err);
+        updateSyncStatus("Sync Error", "bg-rose-500");
+      }
+    }
+
+    function onRateBasisChange() {
+      const basis = document.getElementById('formRateBasis').value;
+      if (basis !== 'line') {
+        document.getElementById('formWeightUnit').value = basis;
+      }
+    }
+
+    function onWeightUnitChange() {
+      const unit = document.getElementById('formWeightUnit').value;
+      const basis = document.getElementById('formRateBasis').value;
+      if (basis !== 'line') {
+        document.getElementById('formRateBasis').value = unit;
+      }
+    }
+
+    function saveToStorage() {
+      localStorage.setItem('kk_gems_stock', JSON.stringify(stockData));
+      updateDropdownFilters();
+      renderStock();
+    }
+
+    function computeValues(item) {
+      const multiplier = item.rateBasis === 'line' ? (Number(item.line) || 0) : (Number(item.weight) || 0);
+      const totalCost = multiplier * (Number(item.costRate) || 0);
+      const totalSale = multiplier * (Number(item.saleRate) || 0);
+      return { totalCost, totalSale };
+    }
+
+    function calculateTotals() {
+      const basis = document.getElementById('formRateBasis').value;
+      const line = parseFloat(document.getElementById('formLine').value) || 0;
+      const weight = parseFloat(document.getElementById('formWeight').value) || 0;
+      const costRate = parseFloat(document.getElementById('formCostRate').value) || 0;
+      const saleRate = parseFloat(document.getElementById('formSaleRate').value) || 0;
+
+      const multiplier = basis === 'line' ? line : weight;
+      document.getElementById('previewCost').innerText = '₹' + (multiplier * costRate).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+      document.getElementById('previewSale').innerText = '₹' + (multiplier * saleRate).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    }
+
+    // Toggle individual checkbox
+    function toggleItemSelection(id, checked) {
+      if (checked) {
+        selectedItemIds.add(id);
+      } else {
+        selectedItemIds.delete(id);
+      }
+      updateSelectionState();
+    }
+
+    // Toggle Select All checkbox in header
+    function toggleSelectAll(checked) {
+      if (checked) {
+        currentFilteredIds.forEach(id => selectedItemIds.add(id));
+      } else {
+        currentFilteredIds.forEach(id => selectedItemIds.delete(id));
+      }
+      updateSelectionState();
+      renderStock();
+    }
+
+    // Update delete button visibility & count
+    function updateSelectionState() {
+      const btn = document.getElementById('btnBulkDelete');
+      const countEl = document.getElementById('selectedCount');
+      const masterCheckbox = document.getElementById('selectAllCheckbox');
+
+      const count = selectedItemIds.size;
+      countEl.innerText = count;
+
+      if (count > 0) {
+        btn.classList.remove('hidden');
+      } else {
+        btn.classList.add('hidden');
+      }
+
+      // Check if all filtered are checked
+      if (currentFilteredIds.length > 0 && currentFilteredIds.every(id => selectedItemIds.has(id))) {
+        masterCheckbox.checked = true;
+      } else {
+        masterCheckbox.checked = false;
+      }
+    }
+
+    // Bulk Delete Selected Action with guaranteed Google Drive Sync
+    async function deleteSelectedItems() {
+      const count = selectedItemIds.size;
+      if (count === 0) return;
+
+      const confirmMsg = `Are you sure you want to delete ${count} selected item(s) from stock and Google Drive?`;
+      if (!confirm(confirmMsg)) return;
+
+      // Filter out the selected items
+      stockData = stockData.filter(item => !selectedItemIds.has(item.id));
+      selectedItemIds.clear();
+      updateSelectionState();
+      saveToStorage();
+
+      // Overwrite Google Sheet with remaining stock so deleted rows are gone permanently
+      await sendToDrive({ action: "SYNC_ALL", items: stockData });
+    }
+
+    function updateDropdownFilters() {
+      const stoneSelect = document.getElementById('filterStone');
+      const currentStone = stoneSelect.value;
+      const stones = [...new Set(stockData.map(i => i.stone).filter(Boolean))].sort();
+      stoneSelect.innerHTML = '<option value="">All Stone Names</option>';
+      stones.forEach(s => {
+        stoneSelect.innerHTML += `<option value="${s}">${s}</option>`;
+      });
+      stoneSelect.value = currentStone;
+
+      const catSelect = document.getElementById('filterCategory');
+      const currentCat = catSelect.value;
+      const categories = [...new Set(stockData.map(i => i.category).filter(Boolean))].sort();
+      catSelect.innerHTML = '<option value="">All Categories</option>';
+      categories.forEach(c => {
+        catSelect.innerHTML += `<option value="${c}">${c}</option>`;
+      });
+      catSelect.value = currentCat;
+
+      const natureSelect = document.getElementById('filterNature');
+      const currentNature = natureSelect.value;
+      const natures = [...new Set(stockData.map(i => i.nature).filter(Boolean))].sort();
+      natureSelect.innerHTML = '<option value="">All Nature</option>';
+      natures.forEach(n => {
+        natureSelect.innerHTML += `<option value="${n}">${n}</option>`;
+      });
+      natureSelect.value = currentNature;
+    }
+
+    function renderStock() {
+      const search = document.getElementById('searchInput').value.toLowerCase();
+      const filterStone = document.getElementById('filterStone').value;
+      const filterCat = document.getElementById('filterCategory').value;
+      const filterUnit = document.getElementById('filterUnit').value;
+      const filterQual = document.getElementById('filterQuality').value;
+      const filterNature = document.getElementById('filterNature').value;
+
+      const tbody = document.getElementById('stockTableBody');
+      tbody.innerHTML = '';
+
+      let grandCost = 0, grandSale = 0, grandLines = 0;
+      let totalGm = 0, totalKg = 0, totalCt = 0;
+      let count = 0;
+      currentFilteredIds = [];
+
+      stockData.forEach((item) => {
+        const itemUnit = item.weightUnit || 'gm';
+        const itemBasis = item.rateBasis || 'line';
+
+        const matchesSearch = !search || 
+          (item.stone && item.stone.toLowerCase().includes(search)) ||
+          (item.desc && item.desc.toLowerCase().includes(search)) ||
+          (item.category && item.category.toLowerCase().includes(search)) ||
+          (item.nature && item.nature.toLowerCase().includes(search)) ||
+          (item.note && item.note.toLowerCase().includes(search));
+
+        const matchesStone = !filterStone || item.stone === filterStone;
+        const matchesCat = !filterCat || item.category === filterCat;
+        const matchesUnit = !filterUnit || itemBasis === filterUnit;
+        const matchesQual = !filterQual || item.quality === filterQual;
+        const matchesNature = !filterNature || item.nature === filterNature;
+
+        if (matchesSearch && matchesStone && matchesCat && matchesUnit && matchesQual && matchesNature) {
+          count++;
+          currentFilteredIds.push(item.id);
+          const isChecked = selectedItemIds.has(item.id);
+
+          const { totalCost, totalSale } = computeValues(item);
+          grandCost += totalCost;
+          grandSale += totalSale;
+          grandLines += (Number(item.line) || 0);
+
+          const wVal = Number(item.weight) || 0;
+          if (itemUnit === 'kg') totalKg += wVal;
+          else if (itemUnit === 'ct') totalCt += wVal;
+          else totalGm += wVal;
+
+          let basisLabel = 'Per Line';
+          if (itemBasis === 'gm') basisLabel = 'Per Gram (gm)';
+          else if (itemBasis === 'kg') basisLabel = 'Per Kilogram (kg)';
+          else if (itemBasis === 'ct') basisLabel = 'Per Carat (ct)';
+
+          const tr = document.createElement('tr');
+          tr.className = `border-b border-slate-200 transition-colors ${isChecked ? 'bg-indigo-50/60' : ''}`;
+          tr.innerHTML = `
+            <!-- Selection Checkbox -->
+            <td class="text-center">
+              <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleItemSelection(${item.id}, this.checked)" class="w-3.5 h-3.5 rounded text-indigo-600 cursor-pointer">
+            </td>
+            <td class="text-center text-slate-400 font-mono text-[11px]">${count}</td>
+            <td class="font-bold text-indigo-950 bg-indigo-50/40">${item.stone || '-'}</td>
+            <td class="font-medium text-slate-800">${item.desc || '-'}</td>
+            <td><span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">${item.category || '-'}</span></td>
+            <td class="text-right font-medium text-slate-800">${item.line || 0}</td>
+            <td class="text-right text-slate-600">${item.bunch || 0}</td>
+            <td class="text-right font-bold text-slate-800">${item.weight ? Number(item.weight).toLocaleString('en-IN') : '-'}</td>
+            <td class="text-center"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${itemUnit === 'ct' ? 'bg-purple-100 text-purple-700' : itemUnit === 'kg' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}">${itemUnit}</span></td>
+            <td><span class="px-1.5 py-0.5 text-[10px] rounded ${itemBasis === 'line' ? 'bg-sky-50 text-sky-700 border border-sky-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}">${basisLabel}</span></td>
+            <td class="text-right text-slate-600">₹${Number(item.costRate || 0).toLocaleString('en-IN')}</td>
+            <td class="text-right text-slate-600">₹${Number(item.saleRate || 0).toLocaleString('en-IN')}</td>
+            <td class="text-right font-medium text-emerald-700">₹${totalCost.toLocaleString('en-IN', {maximumFractionDigits: 1})}</td>
+            <td class="text-right font-bold text-indigo-700">₹${totalSale.toLocaleString('en-IN', {maximumFractionDigits: 1})}</td>
+            <td class="text-slate-500">${item.quality || '-'}</td>
+            <td class="text-slate-700 font-medium">${item.nature || '-'}</td>
+            <td class="text-slate-400 max-w-[120px] truncate" title="${item.note || ''}">${item.note || '-'}</td>
+            <!-- Action Column (Edit Only - Safe from accidental deletion) -->
+            <td class="text-center whitespace-nowrap">
+              <button onclick="editEntry(${item.id})" class="px-2.5 py-1 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded font-semibold border border-indigo-200">Edit</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        }
+      });
+
+      document.getElementById('statItems').innerText = count;
+      document.getElementById('statLines').innerText = grandLines.toLocaleString('en-IN');
+      document.getElementById('statWeights').innerText = `${totalGm.toLocaleString('en-IN')} gm | ${totalKg.toLocaleString('en-IN')} kg | ${totalCt.toLocaleString('en-IN')} ct`;
+      document.getElementById('statCost').innerText = '₹' + grandCost.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+      document.getElementById('statSale').innerText = '₹' + grandSale.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+
+      updateSelectionState();
+    }
+
+    function openModal() {
+      document.getElementById('stockForm').reset();
+      document.getElementById('entryId').value = '';
+      document.getElementById('modalTitle').innerText = 'Add Gem Stock';
+      document.getElementById('formWeightUnit').value = 'gm';
+      document.getElementById('formRateBasis').value = 'line';
+      document.getElementById('formNature').value = 'Natural';
+      document.getElementById('previewCost').innerText = '₹0.00';
+      document.getElementById('previewSale').innerText = '₹0.00';
+      document.getElementById('itemModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('itemModal').classList.add('hidden');
+    }
+
+    function saveEntry(e) {
+      e.preventDefault();
+      const id = document.getElementById('entryId').value;
+      const unit = document.getElementById('formWeightUnit').value;
+
+      const entry = {
+        id: id ? Number(id) : Date.now(),
+        stone: document.getElementById('formStone').value.trim(),
+        desc: document.getElementById('formDesc').value.trim(),
+        category: document.getElementById('formCategory').value.trim() || 'Uncategorized',
+        quality: document.getElementById('formQuality').value.trim() || 'Standard',
+        nature: document.getElementById('formNature').value.trim() || 'Natural',
+        line: parseFloat(document.getElementById('formLine').value) || 0,
+        bunch: parseFloat(document.getElementById('formBunch').value) || 0,
+        weight: parseFloat(document.getElementById('formWeight').value) || 0,
+        weightUnit: unit,
+        rateBasis: document.getElementById('formRateBasis').value,
+        costRate: parseFloat(document.getElementById('formCostRate').value) || 0,
+        saleRate: parseFloat(document.getElementById('formSaleRate').value) || 0,
+        note: document.getElementById('formNote').value.trim()
+      };
+
+      const computed = computeValues(entry);
+      entry.totalCost = computed.totalCost;
+      entry.totalSale = computed.totalSale;
+
+      if (id) {
+        const idx = stockData.findIndex(item => item.id === Number(id));
+        if (idx !== -1) stockData[idx] = entry;
+      } else {
+        stockData.unshift(entry);
+      }
+
+      saveToStorage();
+      closeModal();
+      sendToDrive({ action: "UPSERT", item: entry });
+    }
+
+    function editEntry(id) {
+      const item = stockData.find(i => i.id === id);
+      if (!item) return;
+
+      document.getElementById('entryId').value = item.id;
+      document.getElementById('formStone').value = item.stone || '';
+      document.getElementById('formDesc').value = item.desc || '';
+      document.getElementById('formCategory').value = item.category || '';
+      document.getElementById('formQuality').value = item.quality || '';
+      document.getElementById('formNature').value = item.nature || 'Natural';
+      document.getElementById('formLine').value = item.line || '';
+      document.getElementById('formBunch').value = item.bunch || '';
+      document.getElementById('formWeight').value = item.weight || '';
+      document.getElementById('formWeightUnit').value = item.weightUnit || 'gm';
+
+      let basis = item.rateBasis;
+      if (basis === 'weight') basis = item.weightUnit || 'gm';
+      document.getElementById('formRateBasis').value = basis || 'line';
+
+      document.getElementById('formCostRate').value = item.costRate || '';
+      document.getElementById('formSaleRate').value = item.saleRate || '';
+      document.getElementById('formNote').value = item.note || '';
+
+      document.getElementById('modalTitle').innerText = 'Edit Gem Stock';
+      calculateTotals();
+      document.getElementById('itemModal').classList.remove('hidden');
+    }
+
+    function importExcel(evt) {
+      const file = evt.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rawJson = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        const imported = [];
+        for (let r = 1; r < rawJson.length; r++) {
+          const row = rawJson[r];
+          if (!row || row.length === 0) continue;
+
+          const desc = row[2] || row[1] || '';
+          if (!desc || desc.toString().includes('Item Desc')) continue;
+
+          const descStr = String(desc).trim();
+          const stoneExtracted = row[7] || descStr.split(' ')[0] || 'Gem';
+          const weightVal = parseFloat(row[5]) || 0;
+
+          const entry = {
+            id: Date.now() + r,
+            stone: String(stoneExtracted).trim(),
+            desc: descStr,
+            category: row[1] ? String(row[1]).trim() : 'खारे',
+            line: parseFloat(row[3]) || 0,
+            bunch: parseFloat(row[4]) || 0,
+            weight: weightVal,
+            weightUnit: 'gm',
+            rateBasis: weightVal > 0 ? 'gm' : 'line',
+            costRate: 0,
+            saleRate: 0,
+            quality: 'Standard',
+            nature: 'Natural',
+            note: row[6] ? String(row[6]) : ''
+          };
+
+          const comp = computeValues(entry);
+          entry.totalCost = comp.totalCost;
+          entry.totalSale = comp.totalSale;
+
+          imported.push(entry);
+        }
+
+        if (imported.length > 0) {
+          stockData = [...imported, ...stockData];
+          saveToStorage();
+          sendToDrive({ action: "SYNC_ALL", items: stockData });
+          alert(`Imported ${imported.length} items and syncing to Google Drive!`);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function exportExcel() {
+      const exportRows = stockData.map(item => {
+        const { totalCost, totalSale } = computeValues(item);
+        const unit = item.weightUnit || 'gm';
+        let basisText = 'Per Line';
+        if (item.rateBasis === 'gm') basisText = 'Per Gram (gm)';
+        else if (item.rateBasis === 'kg') basisText = 'Per Kilogram (kg)';
+        else if (item.rateBasis === 'ct') basisText = 'Per Carat (ct)';
+
+        return {
+          "Business": "K. K. GEMS",
+          "Stone Name": item.stone,
+          "Item Description": item.desc,
+          "Category": item.category,
+          "Quality": item.quality,
+          "Nature": item.nature,
+          "Line": item.line,
+          "Bunch": item.bunch,
+          "Weight": item.weight,
+          "Weight Unit": unit,
+          "Rate Basis": basisText,
+          "Cost Rate": item.costRate,
+          "Sale Rate": item.saleRate,
+          "Total Cost": totalCost,
+          "Total Value": totalSale,
+          "Note": item.note
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(exportRows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Stock");
+      XLSX.writeFile(wb, "K_K_GEMS_All_Stock.xlsx");
+    }
+
+    updateDropdownFilters();
+    renderStock();
+    fetchFromGoogleDrive();
+  </script>
+</body>
+</html>
